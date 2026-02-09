@@ -1,8 +1,3 @@
-This is a crucial step. Since your project is now professional, you need a professional **"README"** file. This is the first thing any new developer will read to set up the project on their machine without asking you 100 questions.
-
-Here is a complete, copy-pasteable **Onboarding Guide**. You can copy this text and save it as `README.md` in your main project folder, or just email it to new team members.
-
----
 
 # 🚗 LokeRide Platform - Developer Setup Guide
 
