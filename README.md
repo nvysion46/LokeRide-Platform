@@ -63,14 +63,78 @@ SQLALCHEMY_DATABASE_URI=mysql+pymysql://root:YOUR_PASSWORD@localhost/rental_car
 
 ## 🗄️ Step 3: Database Setup
 
-**Crucial:** Do NOT create tables manually. We use migrations.
+Here is the exact step-by-step to provision your database safely using the CLI.
 
-1. **Create the Empty Database:**
-Open MySQL Workbench or your terminal and run this SQL command:
+### **Step 1: Open the Client**
+
+1. Press your **Windows Key**.
+2. Type **"MySQL 8.0 Command Line Client"**.
+3. Click the black icon to open it.
+
+### **Step 2: Log in as Root**
+
+1. It will ask for `Enter password:`.
+2. Type your **root** password.
+* *Note: You won't see the cursor move or stars appear while typing. This is a security feature. Just type it blindly and hit Enter.*
+
+
+3. You should see the welcome message: `mysql>`.
+
+### **Step 3: Run the Commands**
+
+Copy and paste these commands **one by one** (or all at once).
+
+**How to Paste:** In the black window, you usually cannot use `Ctrl+V`. Instead, **right-click** anywhere on the title bar (or inside the window depending on your settings) to paste.
+
+**1. Create the Database**
+
 ```sql
-CREATE DATABASE rental_car;
+CREATE DATABASE lokeride_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ```
+
+*Expected Output:* `Query OK, 1 row affected`
+
+**2. Create the Secure User**
+*(Replace 'StrongPassword123!' with your own strong password)*
+
+```sql
+CREATE USER 'lokeride_user'@'localhost' IDENTIFIED BY 'StrongPassword123!';
+
+```
+
+*Expected Output:* `Query OK, 0 rows affected`
+
+**3. Grant Permissions**
+
+```sql
+GRANT ALL PRIVILEGES ON lokeride_db.* TO 'lokeride_user'@'localhost';
+
+```
+
+*Expected Output:* `Query OK, 0 rows affected`
+
+**4. Save Changes**
+
+```sql
+FLUSH PRIVILEGES;
+
+```
+
+*Expected Output:* `Query OK, 0 rows affected`
+
+### **Step 4: Verify It Worked**
+
+Run this command to check if your new user exists:
+
+```sql
+SELECT user, host FROM mysql.user WHERE user = 'lokeride_user';
+
+```
+
+If you see a table with `lokeride_user` and `localhost`, **you are successful!**
+
+Type `exit` to close the window.
 
 
 2. **Apply Migrations (Create Tables):**
