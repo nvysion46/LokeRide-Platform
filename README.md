@@ -51,8 +51,14 @@ pip install -r requirements.txt
 4. **Configure Environment Variables:**
 Create a new file named `.env` in the root folder and add the following config (ask the Team Lead for specific secrets):
 ```ini
-SECRET_KEY=your_secret_key_here
-SQLALCHEMY_DATABASE_URI=mysql+pymysql://root:YOUR_PASSWORD@localhost/rental_car
+# Database Configuration
+DB_USER=lokeride_user
+DB_PASSWORD=StrongPassword123!
+DB_HOST=localhost
+DB_NAME=lokeride_db
+
+# Security (Ask Team Lead for the real key)
+JWT_SECRET=paste-secret-key-here
 
 ```
 
