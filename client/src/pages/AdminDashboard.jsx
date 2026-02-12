@@ -14,10 +14,6 @@ const getStatusColor = (status) => {
         case 'AVAILABLE': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
         case 'RENTED': return 'bg-blue-100 text-blue-800 border-blue-200';
         case 'MAINTENANCE': return 'bg-orange-100 text-orange-800 border-orange-200';
-        case 'APPROVED': return 'bg-green-100 text-green-800 border-green-200';
-        case 'PENDING': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-        case 'CANCELLED': return 'bg-red-100 text-red-800 border-red-200';
-        case 'COMPLETED': return 'bg-blue-100 text-blue-800 border-blue-200';
         default: return 'bg-gray-100 text-gray-800';
     }
 };
@@ -45,6 +41,7 @@ const AdminDashboard = () => {
     
     // Unified Data State
     const [data, setData] = useState([]); 
+    const [categories, setCategories] = useState([]); // ✅ Added Categories State
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -86,7 +83,6 @@ const AdminDashboard = () => {
             
             if (res.ok) {
                 const result = await res.json();
-                // Handle different response structures gracefully
                 setData(result.items || result.bookings || result.coupons || []);
             } else {
                 setData([]);
@@ -98,7 +94,26 @@ const AdminDashboard = () => {
         }
     }, [token, activeTab]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    // ✅ Fix: Log error to avoid ESLint warning
+    const fetchCategories = useCallback(async () => {
+        if (!token) return;
+        try {
+            const res = await fetch(`${API_URL}/admin/categories`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const result = await res.json();
+                setCategories(result.items || []);
+            }
+        } catch (err) {
+            console.error("Failed to load categories", err);
+        }
+    }, [token]);
+
+    useEffect(() => { 
+        fetchData();
+        fetchCategories(); 
+    }, [fetchData, fetchCategories]);
 
     // --- ACTIONS ---
     const handleAction = async (method, endpoint, body = null) => {
@@ -111,23 +126,24 @@ const AdminDashboard = () => {
                 },
                 body: body ? JSON.stringify(body) : null
             });
-            if (!res.ok) throw new Error("Request failed");
+            
+            const data = await res.json(); // Get error message from backend
+
+            if (!res.ok) throw new Error(data.message || data.error || "Request failed");
+            
             toast.success("Success!");
             fetchData();
             setIsModalOpen(false);
         } catch (err) {
+            console.error(err);
             toast.error(err.message || "Action failed");
         }
     };
 
     const handleDelete = (id) => {
         if(!window.confirm("Are you sure? This cannot be undone.")) return;
-        
         let endpoint = `/admin/${activeTab}/${id}`;
         if (activeTab === 'notifications') endpoint = `/notifications/${id}`;
-        
-        // ✅ ALLOW deleting users now (Restriction removed)
-        
         handleAction('DELETE', endpoint);
     };
 
@@ -135,7 +151,24 @@ const AdminDashboard = () => {
         e.preventDefault();
         const url = editingItem ? `/admin/cars/${editingItem.id}` : '/admin/cars';
         const method = editingItem ? 'PATCH' : 'POST';
-        handleAction(method, url, carForm);
+        
+        // ✅ FIX: Ensure all required fields are present and types are correct
+        const payload = {
+            ...carForm,
+            category_id: parseInt(carForm.category_id) || 1,
+            quantity: parseInt(carForm.quantity) || 1,
+            daily_rate: parseFloat(carForm.daily_rate) || 0,
+            twelve_hour_rate: parseFloat(carForm.twelve_hour_rate) || 0,
+            
+            // Default fields that are required by DB but not in form
+            seats: 5,
+            doors: 4,
+            fuel_type: "Petrol",
+            cleaning_time: 1,
+            is_featured: false
+        };
+
+        handleAction(method, url, payload);
     };
 
     const handleCouponSubmit = (e) => {
@@ -162,9 +195,12 @@ const AdminDashboard = () => {
     // --- MODAL HELPERS ---
     const openAddModal = () => {
         setEditingItem(null);
-        if(activeTab === 'cars') setCarForm(initialCarForm);
-        if(activeTab === 'coupons') setCouponForm(initialCouponForm);
-        if(activeTab === 'notifications') setNotifForm(initialNotifForm);
+        setCarForm({
+            ...initialCarForm,
+            category_id: categories.length > 0 ? categories[0].id : 1 
+        });
+        setCouponForm(initialCouponForm);
+        setNotifForm(initialNotifForm);
         setIsModalOpen(true);
     };
 
@@ -272,7 +308,7 @@ const AdminDashboard = () => {
                                             <td className="p-5">
                                                 <div className="text-sm text-gray-600">
                                                     <div className="flex items-center gap-1"><Hash size={12}/> {car.number_plate || 'N/A'}</div>
-                                                    <div className="text-xs text-gray-400">Qty: {car.quantity || 1}</div>
+                                                    <div className="text-xs text-gray-400">Qty: {car.quantity || 1} • {car.transmission}</div>
                                                 </div>
                                             </td>
                                             <td className="p-5 font-medium text-gray-600">${Number(car.daily_rate).toFixed(0)} <span className="text-xs font-normal">/day</span></td>
@@ -390,6 +426,33 @@ const AdminDashboard = () => {
                                     <input className="border p-2.5 w-full rounded-xl text-sm" placeholder="Brand" value={carForm.brand} onChange={e => setCarForm({...carForm, brand: e.target.value})} required/>
                                     <input className="border p-2.5 w-full rounded-xl text-sm" placeholder="Model" value={carForm.name} onChange={e => setCarForm({...carForm, name: e.target.value})} required/>
                                 </div>
+                                
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs text-gray-500 font-bold mb-1 block">Category</label>
+                                        <select 
+                                            className="border p-2.5 w-full rounded-xl text-sm bg-white"
+                                            value={carForm.category_id}
+                                            onChange={e => setCarForm({...carForm, category_id: parseInt(e.target.value)})}
+                                        >
+                                            {categories.map(cat => (
+                                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 font-bold mb-1 block">Transmission</label>
+                                        <select 
+                                            className="border p-2.5 w-full rounded-xl text-sm bg-white"
+                                            value={carForm.transmission}
+                                            onChange={e => setCarForm({...carForm, transmission: e.target.value})}
+                                        >
+                                            <option value="AUTO">Automatic</option>
+                                            <option value="MANUAL">Manual</option>
+                                        </select>
+                                    </div>
+                                </div>
+
                                 <input className="border p-2.5 w-full rounded-xl text-sm" placeholder="Slug (unique-id)" value={carForm.slug} onChange={e => setCarForm({...carForm, slug: e.target.value})} required/>
                                 
                                 <div className="grid grid-cols-2 gap-3">
@@ -469,4 +532,3 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
-

@@ -49,6 +49,10 @@ class Car(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=False)
     slug = db.Column(db.String(255), unique=True, nullable=False)
     quantity = db.Column(db.Integer, nullable=False, default=1)
+    
+    # 👇 ADDED FIELD HERE
+    number_plate = db.Column(db.String(20), nullable=True) 
+
     cleaning_time = db.Column(db.Integer, nullable=False, default=1)  # hours buffer between trips
 
     transmission = db.Column(db.String(10), nullable=False)

@@ -1,14 +1,15 @@
 # RENTAL_CAR/app/routes/admin.py
 from flask import Blueprint, request
-from flask_jwt_extended import jwt_required, get_jwt_identity # ✅ Added get_jwt_identity
-from app.models import db, Car, Coupon, Booking, BookingStatus, User
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.models import db, Car, Coupon, Booking, BookingStatus, User, Category
 from app.routes.utils import admin_required
-from app.schemas import CarSchema, CouponSchema, BookingSchema, UserSchema
+from app.schemas import CarSchema, CouponSchema, BookingSchema, UserSchema, CategorySchema
 from app.utils.responses import ok, error
 from datetime import datetime, timedelta, timezone
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+# Initialize Schemas
 car_schema = CarSchema()
 cars_schema = CarSchema(many=True)
 coupon_schema = CouponSchema()
@@ -17,6 +18,22 @@ booking_schema = BookingSchema()
 bookings_schema = BookingSchema(many=True)
 user_schema = UserSchema()
 users_schema = UserSchema(many=True)
+categories_schema = CategorySchema(many=True) # ✅ Added CategorySchema
+
+# --- CATEGORY MANAGEMENT (NEW) ---
+
+@bp.get("/categories")
+@jwt_required()
+@admin_required
+def list_categories():
+    """
+    Fetch all categories for the car creation dropdown.
+    """
+    try:
+        cats = Category.query.all()
+        return ok({"items": categories_schema.dump(cats)}, 200)
+    except Exception as e:
+        return error(f"Error fetching categories: {str(e)}", 500)
 
 # --- CAR MANAGEMENT ---
 
@@ -32,12 +49,17 @@ def list_cars():
 @admin_required
 def create_car():
     payload = request.get_json(silent=True) or {}
+    print("📩 Received Payload:", payload) # ✅ Debug: Print what the frontend sent
+
     try:
+        # Validate and Load
         car = car_schema.load(payload)
         db.session.add(car)
         db.session.commit()
         return ok({"car": car_schema.dump(car)}, 201)
     except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error creating car: {e}") # ✅ Debug: Print the specific error to terminal
         return error(f"Error creating car: {str(e)}", 400)
 
 @bp.patch("/cars/<int:car_id>")
@@ -49,6 +71,8 @@ def update_car(car_id):
     
     payload = request.get_json(silent=True) or {}
     
+    # Manual field mapping allows partial updates without full schema validation if preferred,
+    # or you can use car_schema.load(payload, instance=car, partial=True)
     if 'status' in payload: car.status = payload['status']
     if 'daily_rate' in payload: car.daily_rate = payload['daily_rate']
     if 'brand' in payload: car.brand = payload['brand']
@@ -56,6 +80,8 @@ def update_car(car_id):
     if 'image' in payload: car.image = payload['image']
     if 'quantity' in payload: car.quantity = int(payload['quantity'])
     if 'number_plate' in payload: car.number_plate = payload['number_plate']
+    if 'transmission' in payload: car.transmission = payload['transmission'] # ✅ Added transmission update
+    if 'category_id' in payload: car.category_id = int(payload['category_id']) # ✅ Added category update
 
     try:
         db.session.commit()
@@ -70,9 +96,13 @@ def update_car(car_id):
 def delete_car(car_id):
     car = Car.query.get(car_id)
     if not car: return error("Car not found", 404)
-    db.session.delete(car)
-    db.session.commit()
-    return ok({"message": "Car deleted"}, 200)
+    try:
+        db.session.delete(car)
+        db.session.commit()
+        return ok({"message": "Car deleted"}, 200)
+    except Exception as e:
+        db.session.rollback()
+        return error(f"Error deleting car: {str(e)}", 500)
 
 # --- BOOKING MANAGEMENT ---
 
@@ -84,18 +114,17 @@ def list_all_bookings():
         now_utc = datetime.now(timezone.utc)
         expiration_threshold = now_utc - timedelta(minutes=1)
         
+        # Expire old pending bookings
         expired_bookings = Booking.query.filter(
             Booking.status == BookingStatus.PENDING,
             Booking.created_at < expiration_threshold.replace(tzinfo=None)
         ).all()
 
-        # Update them to CANCELLED
         if expired_bookings:
             for booking in expired_bookings:
                 booking.status = BookingStatus.CANCELLED
-            db.session.commit()  # Save changes before fetching list
+            db.session.commit()
 
-        # ✅ 2. Fetch updated list
         bookings = Booking.query.order_by(Booking.created_at.desc()).all()
         return ok({"items": bookings_schema.dump(bookings)}, 200)
 
@@ -115,9 +144,13 @@ def update_booking_status(booking_id: int):
     booking = Booking.query.get(booking_id)
     if not booking: return error("Booking not found", 404)
 
-    booking.status = new_status
-    db.session.commit()
-    return ok({"booking": booking_schema.dump(booking)}, 200)
+    try:
+        booking.status = new_status
+        db.session.commit()
+        return ok({"booking": booking_schema.dump(booking)}, 200)
+    except Exception as e:
+        db.session.rollback()
+        return error(f"Error updating booking: {str(e)}", 500)
 
 @bp.delete("/bookings/<int:booking_id>")
 @jwt_required()
@@ -143,23 +176,19 @@ def list_users():
     Lists all users with their total booking count.
     """
     try:
-        # Query users
         users = User.query.all()
         
         users_data = []
         for user in users:
-            # Count ALL bookings for strict history stats
             booking_count = Booking.query.filter_by(user_id=user.id).count()
-            
             user_dump = user_schema.dump(user)
-            user_dump['total_bookings'] = booking_count # Add custom field for frontend
+            user_dump['total_bookings'] = booking_count 
             users_data.append(user_dump)
 
         return ok({"items": users_data}, 200)
     except Exception as e:
         return error(f"Failed to fetch users: {str(e)}", 500)
 
-# ✅ ADDED DELETE USER ROUTE
 @bp.delete("/users/<int:user_id>")
 @jwt_required()
 @admin_required
@@ -169,7 +198,6 @@ def delete_user(user_id):
         return error("User not found", 404)
     
     try:
-        # Check if deleting self
         current_user_id = get_jwt_identity()
         if user.id == current_user_id:
             return error("You cannot delete your own admin account.", 400)
@@ -231,7 +259,6 @@ def update_coupon(coupon_id):
         if 'discount_percentage' in payload: coupon.discount_percentage = payload['discount_percentage']
         if 'usage_limit' in payload: coupon.usage_limit = payload['usage_limit']
         
-        # Handle date updates safely
         if 'valid_from' in payload and payload['valid_from']:
              coupon.valid_from = datetime.fromisoformat(payload['valid_from'].replace('Z', ''))
         if 'valid_to' in payload and payload['valid_to']:
